@@ -1,0 +1,371 @@
+---
+title: "COVID-19 in the US"
+author: "Hannah Bravo De Rueda"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(plotly)
+library(usmap)
+knitr::opts_chunk$set(message = FALSE, echo = FALSE)
+```
+
+
+Column {data-width=360}
+-----------------------------------------------------------------------
+
+### COVID-19 Cases & Deaths in the US
+
+```{r total cases/deaths visualization}
+# Import New York Times COVID-19 data
+us_counties_2020 <- 
+  read_csv(
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2020.csv")
+us_counties_2021 <- 
+  read_csv(
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2021.csv")
+us_counties_2022 <- 
+  read_csv(
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2022.csv")
+
+# Join the data into a single dataframe
+us_counties <- us_counties_2020 %>% 
+  bind_rows(us_counties_2021) %>% 
+  bind_rows(us_counties_2022)
+
+# The combined data looks tidy already, so next I'll remove the rows for Puerto Rico
+us_counties <- us_counties %>% 
+    filter(state != "Puerto Rico")
+
+# Find the total COVID-19 cases & deaths for each day since March 15, 2020
+initial_date <- "2020-03-15" # Set demarcation date for beginning of pandemic
+
+# us_total_cases & deaths per day from 3-15-2020 to 12-31-2022
+us_totals <- us_counties %>% 
+  filter(date >= initial_date) %>% 
+  group_by(date) %>% 
+  summarize(us_total_cases = sum(cases), us_total_deaths = sum(deaths))
+
+# Time series for the total number of US cases and deaths since March 15, 2020. 
+us_totals %>% 
+  ggplot(aes(x = date)) + # Map 'date' on x-axis
+  geom_line(aes(y = (us_total_cases/332000000*100000), color = "Cases")) + 
+  # map cases on left-hand y-axis
+  # left-hand Y-axis scaled per 100,000 people, the average US population across 2020, 2021, and 2022 is 332 million
+  geom_line(aes(y = (us_total_deaths/3000000*100000), color = "Deaths")) +  
+  # map deaths on right-hand y-axis
+  # right-hand Y-axis scaled per 10,000 deaths, the average # of deaths in the US across 2020, 2021, and 2022 is 3 million
+  scale_y_continuous(
+    name = "US COVID-19 Cases per 100,000 People", # Name for left-hand Y-axis
+    sec.axis = sec_axis(trans = ~.*1, name = "US COVID-19 Deaths per 100,000 Deaths")) + 
+  # right-hand y-axis is already transformed, so I set 'trans' argument to multiplying the deaths data by 1
+  labs(x = "Year", title = "COVID-19 Cases & Deaths in the US", color = "") # Plot title, and x-axis label. 
+```
+
+
+### COVID-19 Weekly Average Cases & Deaths in the US 
+
+```{r p1q5-response, warning=FALSE}
+# Import population estimate from US Census for the years 2020, 2021, & 2022
+us_population_estimates_20_22 <- read_csv("/Users/hannahbdr/Desktop/DataAnalysis/R /COVID19 Project/US Census state population estimates 2020 - 2022.csv", col_names = TRUE)
+
+# Calculate the total US population for 2020, 2021, and 2022
+us_pop_est <- us_population_estimates_20_22 %>% 
+  rename(state = "table with row headers in column A and column headers in rows 3 through 4. (leading dots indicate sub-parts)", 
+         pop_est_2020 = "...2", 
+         pop_est_2021 = "...3", 
+         pop_est_2022 = "...4") %>% 
+  summarise(us_pop_est_2020 = sum(pop_est_2020), 
+            us_pop_est_2021 = sum(pop_est_2021),
+            us_pop_est_2022 = sum(pop_est_2022)) %>% 
+    pivot_longer(cols = us_pop_est_2020:us_pop_est_2022, names_to = "year", values_to = "us_pop_est") %>% 
+    mutate(across("year", str_replace_all, "[us_pop_est_]", "")) %>% 
+    transform(year = as.numeric(year))
+
+# Update us_totals table for new columns
+us_totals <- us_totals %>% 
+    mutate(new_cases = us_total_cases - lag(us_total_cases, order_by = date,
+                                            default = 0), # number of new cases each day
+           new_deaths = us_total_deaths - lag(us_total_deaths, n = 1, order_by = date, 
+                                              default = 0)) %>% # number of new deaths each day
+   filter(new_deaths >= "0") %>% 
+          filter(new_cases >= "0") #  
+
+# Update us_totals for weekly rolling averages
+us_totals <- us_totals %>% 
+  mutate(wkly_avg_deaths = round(lag((lead(us_totals$us_total_deaths, n= 7) - 
+                                        us_total_deaths)/7, n= 7), 1),
+         wkly_avg_cases = round(lag((lead(us_totals$us_total_cases, n= 7) - 
+                                       us_total_cases)/7, n= 7), 0))
+
+
+# Update 'us_totals' to extract year from the date column to be able to join the population estimates by year
+us_totals_per <- us_totals %>% 
+    mutate(year = year(date)) %>% 
+    relocate(year, .before = 2)
+
+# Update all column values to reflect the statistic per 100,000 people, given the US population estimate for 2020, 2021, and 2022.
+us_totals_per <- us_totals_per %>% 
+  left_join(us_pop_est, join_by(year == year)) %>% 
+  mutate(us_total_cases = case_when(year == "2020" ~ round(us_total_cases/us_pop_est*100000, 2),
+                               year == "2021" ~ round(us_total_cases/us_pop_est*100000, 2),
+                               year == "2022" ~ round(us_total_cases/us_pop_est*100000, 2)),
+         us_total_deaths = case_when(year == "2020" ~ round(us_total_deaths/us_pop_est*100000, 3),
+                               year == "2021" ~ round(us_total_deaths/us_pop_est*100000, 3),
+                               year == "2022" ~ round(us_total_deaths/us_pop_est*100000, 3)),
+         new_cases = case_when(year == "2020" ~ round(new_cases/us_pop_est*100000, 3),
+                               year == "2021" ~ round(new_cases/us_pop_est*100000, 3),
+                               year == "2022" ~ round(new_cases/us_pop_est*100000, 3)),
+         new_deaths = case_when(year == "2020" ~ round(new_deaths/us_pop_est*100000, 4),
+                               year == "2021" ~ round(new_deaths/us_pop_est*100000, 4),
+                               year == "2022" ~ round(new_deaths/us_pop_est*100000, 4)),
+         wkly_avg_cases = case_when(year == "2020" ~ round(wkly_avg_cases/us_pop_est*100000, 2),
+                               year == "2021" ~ round(wkly_avg_cases/us_pop_est*100000, 2),
+                               year == "2022" ~ round(wkly_avg_cases/us_pop_est*100000, 2)),
+         wkly_avg_deaths = case_when(year == "2020" ~ round(wkly_avg_deaths/us_pop_est*100000, 4),
+                               year == "2021" ~ round(wkly_avg_deaths/us_pop_est*100000, 4),
+                               year == "2022" ~ round(wkly_avg_deaths/us_pop_est*100000, 4)))
+
+# Create a visualization to compare the seven-day average cases and deaths per 100,000 people. 
+us_totals_per %>% 
+  ggplot(aes(x = date)) + # Map 'date' on x-axis
+  geom_line(aes(y = wkly_avg_cases, color = "Cases")) + 
+  # map cases on left-hand y-axis
+  # left-hand Y-axis scaled per 100,000 people, the average US population across 2020, 2021, and 2022 is 332 million
+  geom_line(aes(y = wkly_avg_deaths*250, color = "Deaths")) +  
+  # map deaths on right-hand y-axis
+  # right-hand Y-axis scaled per 10,000 deaths, the average # of deaths in the US across 2020, 2021, and 2022 is 3 million
+  scale_y_continuous(
+    name = "7-day Average Cases per 100,000", # Name for left-hand Y-axis
+    sec.axis = sec_axis(trans = ~./250, name = "7-day Average Deaths per 100,000")) + 
+  # right-hand y-axis is already transformed, so I set 'trans' argument to multiplying the deaths data by 1
+  labs(x = "Year", title = "7-day Average COVID-19 Cases & Deaths in the US", color = "") # Plot title, and x-axis label. 
+
+```
+
+
+### COVID-19 Cases & Deaths in North Dakota per 100,000 people
+
+```{r}
+# Import New York Times COVID-19 data
+us_counties_2020 <- 
+  read_csv(
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2020.csv")
+us_counties_2021 <- 
+  read_csv(
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2021.csv")
+us_counties_2022 <- 
+  read_csv(
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2022.csv")
+
+# Combine the 2020, 2021, and 2022 COVID data sets. 
+us_counties <- us_counties_2020 %>% 
+  bind_rows(us_counties_2021) %>% 
+  bind_rows(us_counties_2022)
+
+# Now, remove Puerto Rico and other US territories
+us_counties <- us_counties %>% 
+  filter(date >= "2020-03-15",
+         state != "Puerto Rico",
+         state != "Virgin Islands",
+         state != "Northern Mariana Islands",
+         state != "Guam",
+         state != "American Samoa")
+
+# Import Population Estimates from US Census Bureau 
+us_population_estimates <- read_csv("fips_population_estimates.csv")
+
+# Calculate the population estimates for each state by finding the average across 2020 and 2021
+state_pop_est <- us_population_estimates %>% 
+  group_by(STNAME) %>% 
+  summarise(st_est = round(sum(Estimate)/2, 0))
+
+# Filter for North Dakota and all data since March 15, 2020
+nd_totals <- us_counties %>% 
+  filter(state == "North Dakota" & date <= "2021-12-31") %>% 
+  group_by(date, state) %>% 
+  summarize(total_cases = sum(cases), total_deaths = sum(deaths))
+
+# Update number of cases and deaths to reflect per 100,000 people across counties. 
+nd_totals <- nd_totals %>% 
+  left_join(state_pop_est, by = join_by(state == STNAME)) %>%
+  mutate(cases_per = round(total_cases/st_est*100000, 2),
+         deaths_per = round(total_deaths/st_est*100000, 4))
+
+# Calculate the 7-day average of cases and deaths per 100,000 people, across counties in North Dakota 
+nd_wkly_avg <- nd_totals %>% 
+  ungroup() %>% 
+  mutate(wkly_avg_cases = round(lag((lead(nd_totals$cases_per, n= 7) - 
+                                       cases_per)/7, n = 7), 2),
+         wkly_avg_deaths = round(lag((lead(nd_totals$deaths_per, n= 7) - 
+                                        deaths_per)/7, n = 7), 3))
+
+# Plot the number of cases and deaths per 100,000 people in ND
+nd_totals %>% 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = cases_per, color = "Cases")) +
+  geom_line(aes(y = deaths_per*75, color = "Deaths")) +
+  scale_y_continuous(
+    name = "COVID Cases per 100,000 in North Dakota",
+    sec.axis = sec_axis(~./75, name = "COVID Deaths per 100,000 in North Daokta")) +
+  labs(x = "Year", title = "COVID-19 Cases & Deaths in North Dakota", color = "")
+```
+
+
+### 7-day Average of COVID-19 Cases & Deaths in North Dakota per 100,000 people
+
+```{r warning=FALSE}
+# Plot the 7-day average of cases and deaths per 100,000 people in ND
+nd_wkly_avg %>% 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = wkly_avg_cases, color = "Cases")) +
+  geom_line(aes(y = wkly_avg_deaths*70, color = "Deaths")) +
+  scale_y_continuous(
+    name = "7-Day Average of COVID-19 Cases",
+    sec.axis = sec_axis(~./70, name = "7-Day Average of COVID-19 Deaths")) +
+  labs(x = "Year", title = "COVID-19 Cases & Deaths in North Dakota", color = "")
+```
+
+
+Column {data-width=300}
+-----------------------------------------------------------------------
+
+### COVID-19 Cases Density map of North Dakota per 100,000
+
+```{r}
+# Let's import the county population estimates for North Dakota for 2020 and 2021
+nd_county_pop_est <- read_csv("/Users/hannahbdr/Desktop/DataAnalysis/R /COVID19 Project/ND County pop estimate 2020 -2022.csv")
+
+nd_county_pop_est <- nd_county_pop_est[-1,] %>% 
+  rename(county = "table with row headers in column A and column headers in rows 3 through 4 (leading dots indicate sub-parts)",
+         "2020" = "...2",
+         "2021" = "...3",
+         "2022" = "...4")
+  
+nd_county_pop_est <- nd_county_pop_est[, -4] %>% 
+    mutate(across("county", str_replace_all, "[.]", ""))
+
+nd_county_pop_est <- nd_county_pop_est %>% 
+  mutate(across("county", str_replace_all, " County$", ""))
+
+nd_county_pop_est <- nd_county_pop_est %>% 
+  mutate(county_est = rowSums(nd_county_pop_est[, -1])/2) %>% 
+  select(county, county_est)
+  
+# Let's join the ND county population estimates to the ND county cases and deaths table
+nd_counties <- us_counties %>% 
+  filter(state == "North Dakota" & date == "2021-12-31")%>% 
+  filter(county != "Unknown")
+
+# Top 10 counties in North Dakota with the most cases 
+nd_county_cases <- nd_counties %>% 
+  left_join(nd_county_pop_est, by = join_by(county == county)) %>% 
+  group_by(county) %>% 
+  summarise(date, fips, total_county_cases = round(sum(cases)/county_est*100000, 2), total_county_deaths = round(sum(deaths)/county_est*100000, 2)) %>% 
+  arrange(desc(total_county_cases))
+
+# Top 10 counties in North Dakota with the most deaths
+nd_county_deaths <- nd_counties %>% 
+  left_join(nd_county_pop_est, by = join_by(county == county)) %>% 
+  group_by(county) %>% 
+  summarise(date, fips, total_county_cases = round(sum(cases)/county_est*100000, 2), total_county_deaths = round(sum(deaths)/county_est*100000, 2)) %>% 
+  arrange(desc(total_county_deaths))
+
+# Map projection of COVID cases in North Dakota by county
+plot_usmap(regions = "county", include = "ND", data = nd_county_cases, values = "total_county_cases", color = "black") +
+  scale_fill_continuous(low = "white", high = "royalblue", name = "Cases per 100,000") +
+  theme(legend.position = "right")
+```
+
+
+### COVID-19 Deaths Density map of North Dakota per 100,000
+
+```{r}
+# Map projection of COVID deaths in North Dakota by county
+plot_usmap(regions = "county", include = "ND", data = nd_county_deaths, values = "total_county_deaths", color = "black") +
+  scale_fill_continuous(low = "white", high = "red", name = "Deaths per 100,000") +
+  theme(legend.position = "right")
+```
+
+Column {data-width=330}
+-----------------------------------------------------------------------
+
+### 7-day Average of COVID-19 Cases in North Dakota, Alaska, Hawaii, and Oregon
+
+```{r warning=FALSE}
+# Alaska
+ak_totals <- us_counties %>% 
+  filter(state == "Alaska" & date <= "2021-12-31") %>% 
+  group_by(date, state) %>% 
+  summarize(total_cases = sum(cases), total_deaths = sum(deaths))
+
+ak_totals <- ak_totals %>% 
+  left_join(state_pop_est, by = join_by(state == STNAME)) %>%
+  mutate(cases_per = round(total_cases/st_est*100000, 2),
+         deaths_per = round(total_deaths/st_est*100000, 4))
+
+ak_wkly_avg <- ak_totals %>% 
+  ungroup() %>%
+  mutate(wkly_avg_cases = round(lag((lead(ak_totals$cases_per, n= 7) - 
+                                       ak_totals$cases_per)/7, n = 7), 2),
+         wkly_avg_deaths = round(lag((lead(ak_totals$deaths_per, n= 7) - 
+                                        ak_totals$deaths_per)/7, n = 7), 3))
+
+# Oregon
+or_totals <- us_counties %>% 
+  filter(state == "Oregon" & date <= "2021-12-31") %>% 
+  group_by(date, state) %>% 
+  summarize(total_cases = sum(cases), total_deaths = sum(deaths))
+
+or_totals <- or_totals %>% 
+  left_join(state_pop_est, by = join_by(state == STNAME)) %>%
+  mutate(cases_per = round(total_cases/st_est*100000, 2),
+         deaths_per = round(total_deaths/st_est*100000, 4))
+
+or_wkly_avg <- or_totals %>% 
+  ungroup() %>%
+  mutate(wkly_avg_cases = round(lag((lead(or_totals$cases_per, n= 7) - 
+                                       or_totals$cases_per)/7, n = 7), 2),
+         wkly_avg_deaths = round(lag((lead(or_totals$deaths_per, n= 7) - 
+                                        or_totals$deaths_per)/7, n = 7), 3))
+
+# Hawaii
+hi_totals <- us_counties %>% 
+  filter(state == "Hawaii" & date <= "2021-12-31") %>% 
+  group_by(date, state) %>% 
+  summarize(total_cases = sum(cases), total_deaths = sum(deaths))
+
+hi_totals <- hi_totals %>% 
+  left_join(state_pop_est, by = join_by(state == STNAME)) %>%
+  mutate(cases_per = round(total_cases/st_est*100000, 2),
+         deaths_per = round(total_deaths/st_est*100000, 4))
+
+hi_wkly_avg <- hi_totals %>%  
+  ungroup() %>% 
+  mutate(wkly_avg_cases = round(lag((lead(hi_totals$cases_per, n= 7) - 
+                                        cases_per)/7, n= 7), 2),
+         wkly_avg_deaths = round(lag((lead(hi_totals$deaths_per, n= 7) - 
+                                        deaths_per)/7, n= 7), 3))
+
+# First let's combine all the weekly average data for the four states into one table to plot.
+st_wkly_avgs <- bind_rows(nd_wkly_avg, ak_wkly_avg, or_wkly_avg, hi_wkly_avg)
+
+# Now let's plot the weekly averages for cases and deaths per 100,000 people for the four states.
+st_wkly_avgs %>% 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = wkly_avg_cases, color = state)) +
+  facet_wrap(vars(state)) +
+  labs(x = "Year", y = "", title = "Weekly Average COVID-19 Cases per 100,000 people")
+```
+
+### 7-day Average of COVID-19 Deaths in North Dakota, Alaska, Hawaii, and Oregon
+
+```{r warning=FALSE}
+st_wkly_avgs %>% 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = wkly_avg_deaths, color = state)) +
+  facet_wrap(vars(state)) +
+  labs(x = "Year", y = "", title = "Weekly Average COVID-19 Deaths per 100,000 people")
+```

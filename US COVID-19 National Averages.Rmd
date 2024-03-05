@@ -1,0 +1,309 @@
+---
+title: "Part 1: US COVID-19 Cases & Deaths - National Averages"
+author: "Hannah Bravo De Rueda"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(usmap)
+```
+
+#### Part 1 - Basic Exploration of US Data
+
+The New York Times (the Times) has aggregated reported COVID-19 data from state and local governments and health departments since 2020 and provides public access through a repository on GitHub. One of the data sets provided by the Times is county-level data for cumulative cases and deaths each day. This will be your primary data set for the first two parts of your analysis. 
+
+County-level COVID data from 2020, 2021, and 2022 has been imported below. Each row of data reports the cumulative number of cases and deaths for a specific county each day. A FIPS code, a standard geographic identifier, is also provided which you will use in Part 2 to construct a map visualization at the county level for a state. 
+
+Additionally, county-level population estimates reported by the US Census Bureau has been imported as well. You will use these estimates to caluclate statistics per 100,000 people. 
+
+```{r import data}
+# Import New York Times COVID-19 data
+us_counties_2020 <- 
+  read_csv(
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2020.csv")
+us_counties_2021 <- 
+  read_csv(
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2021.csv")
+us_counties_2022 <- 
+  read_csv(
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2022.csv")
+
+# Import Population Estimates from US Census Bureau 
+us_population_estimates <- read_csv("/Users/hannahbdr/Desktop/DataAnalysis/R /COVID19 Project/Datasets/fips_population_estimates.csv") # Only includes 2020 and 2021
+
+# Importing a more current population estimate from US Census to include 2022
+us_population_estimates_20_22 <- read_csv("/Users/hannahbdr/Desktop/DataAnalysis/R /COVID19 Project/Datasets/US Census state population estimates 2020 - 2022.csv", col_names = TRUE)
+```
+I imported data for COVID-19 cases and deaths for each state, and their various counties, across the US, for each year of the pandemic: 2020, 2021, and 2022.  Additionally, I imported population estimates from the US census bureau, unfortunately, the first dataset only contained estimates for 2020, and 2021. So, I chose to import a second dataset of US population estimates from 'census.gov' that contained estimates for all three years; 2020, 2021, and 2022.
+
+##### Question 1 
+
+Your first task is to combine and tidy the 2020, 2021, and 2022 COVID data sets and find the total deaths and cases for each day since March 15, 2020 (2020-03-15). The data sets provided from the NY Times also includes statistics from Puerto Rico, a US territory. You may remove these observations from the data as they will not be needed for your analysis. Once you have tidied the data, find the total COVID-19 cases and deaths since March 15, 2020. Write a sentence or two after the code block communicating your results. Use inline code to include the `max_date`, `us_total_cases`, and `us_total_deaths` variables. To write inline code use `r `. 
+
+```{r combining datasets}
+# glance at the 2020 dataset to get a feel for it.
+us_counties_2020 %>% head()
+
+# Combine the 2020, 2021, and 2022 COVID data sets. 
+(us_counties <- us_counties_2020 %>% 
+  bind_rows(us_counties_2021) %>% 
+  bind_rows(us_counties_2022))
+
+# The combined dataset looks tidy already, so next I'll remove the rows for Puerto Rico
+(us_counties <- us_counties %>% 
+    filter(state != "Puerto Rico"))
+
+# Find the total COVID-19 cases & deaths for each day since March 15, 2020
+
+initial_date <- "2020-03-15" # Set demarcation date for beginning of pandemic
+last_date <- "2022-12-31" # Set last date for pandemic data
+
+# us_total_cases & deaths per day from 3-15-2020 to 12-31-2022
+(us_totals <- us_counties %>% 
+  filter(date >= initial_date) %>% 
+  group_by(date) %>% 
+  summarize(us_total_cases = sum(cases), us_total_deaths = sum(deaths)))
+
+# Total cases in US on 3-15-2020
+(initial_date_cases <- us_counties %>% 
+  filter(date == initial_date) %>% 
+  summarize(us_total_cases = sum(cases)))
+
+# Total deaths in US on 3-15-2020
+(initial_date_deaths <- us_counties %>% 
+  filter(date == initial_date) %>% 
+  summarize(us_total_deaths = sum(deaths)))
+
+# Total cases in US on 12-31-2022
+(last_date_cases <- us_counties %>% 
+  filter(date == last_date) %>% 
+  summarize(us_total_cases = sum(cases)))
+
+# Total deaths in US on 12-31-2022
+(last_date_deaths <- us_counties %>% 
+  filter(date == last_date) %>%
+  summarize(us_total_deaths = sum(deaths)))
+
+```
+
+As of `r format("2020-03-15", format = '%d %B, %Y')`, at the beginning of the pandemic, the total number of COVID-19 cases in the US was `r initial_date_cases` and the total number of deaths was `r initial_date_deaths`.  Almost three years later, as of `r format("2022-12-31", format = '%d %B, %Y')`, the total number of COVID-19 cases shot up to `r last_date_cases` and the total number of deaths rose to `r last_date_deaths`.  That amounts to almost 30% of the US population contracting COVID-19 over the course of the pandemic, and accounting for 10% of deaths in the US each year of the pandemic. Making COVID-19 the third leading cause of death for residents in the US between 2020 and 2022.  
+
+##### Question 2 
+
+Create a visualization for the total number of deaths and cases in the US since March 15, 2020. Before you create your visualization, review the types of plots you can create using the ggplot2 library and think about which plots would be effective in communicating your results. After you have created your visualization, write a few sentences describing your visualization. How could the plot be interpreted? Could it be misleading? 
+
+```{r total cases/deaths visualization}
+# Time series for the total number of US cases and deaths since March 15, 2020. 
+us_totals %>% 
+  ggplot(aes(x = date)) + # Map 'date' on x-axis
+  geom_line(aes(y = (us_total_cases/332000000*100000), color = "Cases")) + 
+  # map cases on left-hand y-axis
+  # left-hand Y-axis scaled per 100,000 people, the average US population across 2020, 2021, and 2022 is 332 million
+  geom_line(aes(y = (us_total_deaths/3000000*100000), color = "Deaths")) +  
+  # map deaths on right-hand y-axis
+  # right-hand Y-axis scaled per 10,000 deaths, the average # of deaths in the US across 2020, 2021, and 2022 is 3 million
+  scale_y_continuous(
+    name = "US COVID-19 Cases per 100,000 People", # Name for left-hand Y-axis
+    sec.axis = sec_axis(trans = ~.*1, name = "US COVID-19 Deaths per 100,000 Deaths")) + 
+  # right-hand y-axis is already transformed, so I set 'trans' argument to multiplying the deaths data by 1
+  labs(x = "Year", title = "COVID-19 Cases & Deaths in the US", color = "") # Plot title, and x-axis label. 
+
+# Consider plotting a 3rd feature that's the ratio of deaths per cases
+```
+
+Methodology: I created a time series plot comparing the number of COVID-19 cases and deaths across the three years of the pandemic: 2020, 2021, and 2022. I charted the number of COVID-19 cases on the left y-axis, and scaled it per 100,000 people by dividing the number of COVID-19 cases by the average US population, 332 million, for the three years of the pandemic. I then plotted the total number of COVID-19 deaths on the right y-axis and scaled it per 100,000 deaths; by dividing the total number of COVID-19 deaths by the average number of deaths per year in the US, for those three years, 3 million. Therefore, the COVID cases data is plotted relative to the total US population, whereas the COVID deaths data is plotted relative to the total US deaths for those three years. 
+
+Results & Interpretation: The chart shows the cumulative growth of both cases and deaths over the three years of the pandemic. Both, COVID-19 cases and deaths seem to follow a similar trend, without showing any outliers or major shifts in the data. The chart starts the beginning of the pandemic, which was early 2020, and goes through to the end of 2022.  COVID-19 cases and deaths begins at or near zero, and over the three years, climbs to ~30,000 cases, per 100,000 people and ~35,000 deaths per 100,000 deaths.          
+
+##### Question 3
+
+While it is important to know the total deaths and cases throughout the COVID-19 pandemic, it is also important for local and state health officials to know the the number of new cases and deaths each day to understand how rapidly the virus is spreading. Using the table you created in Question 1, calculate the number of new deaths and cases each day and a seven-day average of new deaths and cases. Once you have organized your data, find the days that saw the largest number of new cases and deaths. Write a sentence or two after the code block communicating your results.
+
+```{r new cases/deaths}
+# Create a new table, calculating the number of new deaths and cases each day 
+# Include a seven day average of new deaths and cases. 
+# Hint: Look at the documentation for lag() when computing the number of new deaths 
+#       and cases and the seven-day averages.
+
+(us_totals <- us_totals %>% # Update us_totals table for new columns
+    mutate(new_cases = us_total_cases - lag(us_total_cases, order_by = date,
+                                            default = 0), # number of new cases each day
+           new_deaths = us_total_deaths - lag(us_total_deaths, n = 1, order_by = date, 
+                                              default = 0)) %>% # number of new deaths each day
+   filter(new_deaths >= "0") %>% 
+          filter(new_cases >= "0")) # Making sure 
+
+(us_totals <- us_totals %>% # Update us_totals for weekly rolling averages
+  mutate(wkly_avg_deaths = round(lag((lead(us_totals$us_total_deaths, n= 7) - 
+                                        us_total_deaths)/7, n= 7), 1),
+         wkly_avg_cases = round(lag((lead(us_totals$us_total_cases, n= 7) - 
+                                       us_total_cases)/7, n= 7), 0)))
+
+(max_new_cases <- us_totals %>% 
+    slice(which.max(new_cases)) %>% 
+    select(new_cases)) # max number of new cases
+# 1-10-2022 with 1.4 million new cases in one day
+
+(min_new_cases <- us_totals %>% 
+    slice(which.min(new_cases)) %>% 
+    select(new_cases)) # min number of new cases
+# 3-16-2020 with 907 new cases 
+
+(max_new_deaths <- us_totals %>% 
+    slice(which.max(new_deaths)) %>% 
+    select(new_deaths)) # max number of new deaths
+# 11-11-2022 with 12,715 new deaths in one day
+
+(min_new_deaths <- us_totals %>% 
+    slice(which.min(new_deaths)) %>% 
+    select(new_deaths)) # min number of new deaths
+# 9-4-2022 there were 0 new deaths, but was that the only day with 0 new deaths?
+
+us_totals %>% 
+  filter(new_deaths == "0") # How many days were there 0 new deaths
+# 9-4-2022 through 12-18-2022 there were a total of 12 days with 0 new deaths
+
+# Calculate the min & max of weekly averages for cases and deaths
+us_totals %>% 
+  filter(!is.na(wkly_avg_deaths)) %>% 
+  summarize(wkly_c_min = min(wkly_avg_cases),  # 4208 
+            wkly_d_min = min(wkly_avg_deaths), # 55.6 
+            wkly_c_max = max(wkly_avg_cases),  # 798,663 
+            wkly_d_max = max(wkly_avg_deaths)) # 3340 
+
+
+# Let's find out what days those mins/maxs occurred
+us_totals %>% 
+  filter(wkly_avg_cases == "4208" |     # 3-22-2020 - min wkly_avg_cases
+           wkly_avg_deaths == "55.6" |  # 3-22-2020 - min wkly_avg_deaths
+           wkly_avg_cases == "798663" | # 1-16-2022 - max wkly-avg_cases
+           wkly_avg_deaths == "3339.9") # 1-12-2021 - max wkly-avg_deaths
+
+# Calculate the mean and median for new cases/deaths
+us_totals %>% 
+  summarise(mean_new_c = round(mean(new_cases), 2),    # 97338.4
+              median_new_c = median(new_cases),        # 58195 a difference of 40% 
+              mean_new_d = round(mean(new_deaths), 2), # 1071.8
+              median_new_d = median(new_deaths))       # 753 a difference of 30%
+
+# Calculate the mean and median for the 7-day average of cases/deaths
+us_totals %>%
+  filter(!is.na(wkly_avg_deaths)) %>% 
+  summarise(mean_avg_c = round(mean(wkly_avg_cases), 2), # 98119
+          median_avg_c = median(wkly_avg_cases),         # 65523 a difference of about 40%
+          mean_avg_d = round(mean(wkly_avg_deaths), 2),  # 1081.1
+          median_avg_d = median(wkly_avg_deaths))        # 813.1 about a difference of about 30%
+
+```
+
+Methodology: I created a new table, from the combined US county totals table, to calculate the number of new cases and deaths each day, beginning March 15, 2020.  I was then able to calculate a 7-day rolling average of both. From there, I determined the maximum and minimum for new cases and new deaths comparing that to the maximum and minimum of weekly averages. Then, I calculated the mean and median for new cases and deaths comparing that to the mean and median for the weekly averages.  
+
+Results: The minimum number of new cases in one day was at the very beginning of the pandemic in 2020, on March 16th with `r min_new_cases` new cases, while the maximum number was at the beginning of 2022 on January 10th, with `r max_new_cases`. As for deaths, the minimum number of new deaths possible is `r min_new_deaths` and there were 12 days in 2022 that had no new deaths between September 4th and December 18th. Whereas the maximum number of new deaths occurred in 2022 on November 11th, with `r max_new_deaths`. The minimum weekly average for cases and deaths occurred in the first week of the pandemic, in 2020 on March 22nd with `r us_totals %>% filter(!is.na(wkly_avg_deaths)) %>% summarize(wkly_c_min = min(wkly_avg_cases))` cases, and `r us_totals %>% filter(!is.na(wkly_avg_deaths)) %>% summarize(wkly_d_min = min(wkly_avg_deaths))` deaths. The maximum average of weekly cases occurred in 2022, on January 16th with `r us_totals %>% filter(!is.na(wkly_avg_deaths)) %>% summarize(wkly_c_max = max(wkly_avg_cases))` cases; and the maximum average of weekly deaths occurred in 2021, on January 12th with `r us_totals %>% filter(!is.na(wkly_avg_deaths)) %>% summarize(wkly_d_max = max(wkly_avg_deaths))` deaths.
+
+There's a significant difference between the mean and median for both new cases and new deaths, suggesting the data is skewed and possibly influenced by outliers. The mean for new COVID cases is: `r us_totals %>% summarise(mean_new_c = round(mean(new_cases), 2))` and the median: `r us_totals %>% summarise(median_new_c = median(new_cases))`; while the mean for new COVID deaths is `r us_totals %>% summarise(mean_new_d = round(mean(new_deaths), 2))` while the median is `r us_totals %>% summarise(median_new_d = median(new_deaths))`. The mean for for weekly average cases is `r us_totals %>% filter(!is.na(wkly_avg_deaths)) %>% summarise(mean_avg_c = round(mean(wkly_avg_cases), 2))` while the median is `r us_totals %>% filter(!is.na(wkly_avg_deaths)) %>% summarise(median_avg_c = median(wkly_avg_cases))`. The mean for weekly average deaths is `r us_totals %>% filter(!is.na(wkly_avg_deaths)) %>% summarise(mean_avg_c = round(mean(wkly_avg_deaths), 2))` and the median is `r us_totals %>% filter(!is.na(wkly_avg_deaths)) %>% summarise(median_avg_c = median(wkly_avg_deaths))`
+
+Interpretation: 
+There is no significant difference between the mean of new cases and the mean of the 7-day average of new case, or between the median of the two.  There is also no significant difference between the mean of new deaths and the mean of the 7-day average of new deaths, or between the median of the two.  
+There is however, a significant difference between the mean and median of new cases, as well as a significant difference between the mean and median of new deaths. This difference suggests that there are possible outliers that are skewing the data. Looking at the median of new cases compared to the maximum and minimum of new cases, we see that the lower 50% of new case data lies within a difference of about 58,000; whereas the upper 50% of new case data lies within a difference of about 1.3 million. Meaning that the upper 50% of data for new cases accounts for 96% of the range of new cases. When we look at the median of new deaths, we see the lower 50% of data occurs within a difference of about 700, while the upper 50% of new deaths data occurs within a difference of about 12,000. Meaning that the upper 50% of data for new deaths accounts for 95% of the range of new deaths. This not only reinforces that the data is skewed, it also suggests how skewed the data is, and in which direction.  We can conclude that the data for new cases and new deaths, as well as the weekly averages of both is not normally distributed, and is skewed to the right.
+Now, looking at when the maximums and minimums occurred, there were a number of days in the fall of 2022 where there were no new deaths, which is interesting since the maximum number of new deaths also occurred in the fall of 2022, meaning that both the record high and low for new COVID deaths occurred in the fall of 2022. Additionally, the maximum number of new cases occurred in January of 2022. Suggesting that the last year of the pandemic, 2022, was the most volatile in terms of record highs and lows. Which is surprising since the vaccine was released at the beginning of 2021, however we also saw the virus adapt with different variants. It would be interested to add event lines to a time series plot denoting when the vaccine was released, and when COVID variants were discovered relative to the inflection points of new cases and deaths.     
+       
+
+##### Question 4
+
+Create a new table, based on the table from Question 3, and calculate the number of new deaths and cases per 100,000 people each day and a seven day average of new deaths and cases per 100,000 people.
+
+```{r cases & deaths per, error=TRUE, warning=FALSE}
+# View the population estimates data
+us_population_estimates_20_22 # Everything looks readable and tidy 
+
+# Hint: To calculate per 100,000 people, calculate the US population in 2020, 2021, and 2022
+# Then, you will need to divide  each statistic by the estimated population and then multiply by 100,000.
+
+# Calculate the total US population for 2020, 2021, and 2022
+us_pop_est <- us_population_estimates_20_22 %>% 
+  rename(state = "table with row headers in column A and column headers in rows 3 through 4. (leading dots indicate sub-parts)", 
+         pop_est_2020 = "...2", 
+         pop_est_2021 = "...3", 
+         pop_est_2022 = "...4") %>% 
+  summarise(us_pop_est_2020 = sum(pop_est_2020), 
+            us_pop_est_2021 = sum(pop_est_2021),
+            us_pop_est_2022 = sum(pop_est_2022)) %>% 
+    pivot_longer(cols = us_pop_est_2020:us_pop_est_2022, names_to = "year", values_to = "us_pop_est") %>% 
+    mutate(across("year", str_replace_all, "[us_pop_est_]", "")) %>% 
+    transform(year = as.numeric(year))
+
+# Update 'us_totals' to extract year from the date column to be able to join the population estimates by year
+us_totals_per <- us_totals %>% 
+    mutate(year = year(date)) %>% 
+    relocate(year, .before = 2)
+
+# Calculate 
+us_totals_per <- us_totals_per %>% 
+  left_join(us_pop_est, join_by(year == year)) %>% 
+  mutate(us_total_cases = case_when(year == "2020" ~ round(us_total_cases/us_pop_est*100000, 2),
+                               year == "2021" ~ round(us_total_cases/us_pop_est*100000, 2),
+                               year == "2022" ~ round(us_total_cases/us_pop_est*100000, 2)),
+         us_total_deaths = case_when(year == "2020" ~ round(us_total_deaths/us_pop_est*100000, 3),
+                               year == "2021" ~ round(us_total_deaths/us_pop_est*100000, 3),
+                               year == "2022" ~ round(us_total_deaths/us_pop_est*100000, 3)),
+         new_cases = case_when(year == "2020" ~ round(new_cases/us_pop_est*100000, 3),
+                               year == "2021" ~ round(new_cases/us_pop_est*100000, 3),
+                               year == "2022" ~ round(new_cases/us_pop_est*100000, 3)),
+         new_deaths = case_when(year == "2020" ~ round(new_deaths/us_pop_est*100000, 4),
+                               year == "2021" ~ round(new_deaths/us_pop_est*100000, 4),
+                               year == "2022" ~ round(new_deaths/us_pop_est*100000, 4)),
+         wkly_avg_cases = case_when(year == "2020" ~ round(wkly_avg_cases/us_pop_est*100000, 2),
+                               year == "2021" ~ round(wkly_avg_cases/us_pop_est*100000, 2),
+                               year == "2022" ~ round(wkly_avg_cases/us_pop_est*100000, 2)),
+         wkly_avg_deaths = case_when(year == "2020" ~ round(wkly_avg_deaths/us_pop_est*100000, 4),
+                               year == "2021" ~ round(wkly_avg_deaths/us_pop_est*100000, 4),
+                               year == "2022" ~ round(wkly_avg_deaths/us_pop_est*100000, 4)))
+
+# Remove the population estimate & year columns that were used for calculations
+us_totals_per <- us_totals_per %>% 
+  select(date, us_total_cases, us_total_deaths, new_cases, new_deaths, wkly_avg_cases, wkly_avg_deaths)
+us_totals_per
+
+# Calculate the max and min of new cases and deaths
+us_totals_per %>% 
+  summarise(min_new_cases = min(new_cases), # matches the same date as the previous table
+            max_new_cases = max(new_cases), # matches the same date as the previous table
+            min_new_deaths = min(new_deaths), # matches the same date as the previous table
+            max_new_deaths = max(new_deaths)) # matches the same date as the previous table
+```
+
+Methodology: I created a new table 'us_totals_per' based off the table in Question 3, 'us_totals', which scales the calculations from the previous table to be per 100,000 people. In order to scale those calculations, I first needed to calculate the total US population for each year of the pandemic; 2020, 2021, and 2022; using the US population estimates data.  Once the population estimate was totaled for each year, I then joined those totals to the 'previous 'us_totals' table by year. I was then able to update each column in the 'us_totals' table by dividing the data in each column by the corresponding year's population estimate, and then multiplying by 100,000.
+
+Results & Interpretation: The dimensions of the resulting table didn't change, but the data itself is now much easier to digest and interpret. Scaling the data per 100,000 people standardizes the numbers and calculations across each year of the pandemic, controlling for changes in a population over the course of a year. However, the maximums and minimums for new cases and deaths still occurred on the same dates as those from the non-scaled data.  
+
+#### Question 5
+
+
+```{r p1q5-response, warning=FALSE}
+# Create a visualization to compare the seven-day average cases and deaths per 100,000 people. 
+us_totals_per %>% 
+  ggplot(aes(x = date)) + # Map 'date' on x-axis
+  geom_line(aes(y = wkly_avg_cases, color = "Cases")) + 
+  # map cases on left-hand y-axis
+  # left-hand Y-axis scaled per 100,000 people, the average US population across 2020, 2021, and 2022 is 332 million
+  geom_line(aes(y = wkly_avg_deaths*250, color = "Deaths")) +  
+  # map deaths on right-hand y-axis
+  # right-hand Y-axis scaled per 10,000 deaths, the average # of deaths in the US across 2020, 2021, and 2022 is 3 million
+  scale_y_continuous(
+    name = "7-day Average Cases per 100,000", # Name for left-hand Y-axis
+    sec.axis = sec_axis(trans = ~./250, name = "7-day Average Deaths per 100,000")) + 
+  # right-hand y-axis is already transformed, so I set 'trans' argument to multiplying the deaths data by 1
+  labs(x = "Year", title = "7-day Average COVID-19 Cases & Deaths in the US", color = "") # Plot title, and x-axis label. 
+
+```
+
+Methodology: I created a dual axis time series plot comparing the seven-day average of COVID-19 cases per 100,000 people and COVID-19 deaths per 100,000 people, across the three years of the pandemic. I placed the 7-day average of COVID cases on the left y-axis and the 7-day average of COVID deaths on the right y-axis.  The weekly average data used for this plot was already scaled to be per 100,000 people in the previous exercise.    
+
+Results: The overall trend of weekly averages for both cases and deaths follow a similar cyclical pattern, however there are a few time points on the graph where their patterns don't seem proportionate.  In January of 2022, the weekly average of cases reaches an all time high almost three times greater than previous spikes, while the weekly average of deaths also displays a spike, it's only it's second highest. . Then again in the summer of 2022, an increase in the weekly average deaths causes it to surpass a decrease in the weekly average cases, after which it falls below once more. Additionally, in the initial months of the pandemic, there is a spike in weekly average cases without an accompanying spike in weekly average deaths.  All of these spikes and dips are gradual, except for a   
+ 
+Interpretation:
+The time series plot shows that in April 2020 there was a significant spike in COVID-19 related deaths, but no corresponding spike in COVID-19 cases. After that, we see the COVID cases line proportionally mimic the COVID deaths line for the remainder of 2020, through 2021, up until 2022. In January of 2022 there is a significant spike in COVID cases, without a proportionate spike in deaths. After which, they both drop back off, until the summer of 2022, where there is another increase in COVID cases, while COVID related deaths displays a continued drop. COVID cases seems to drop back down again, but then in November of 2022, there is a very steep and dramatic spike in deaths that seems to last a matter of days before dropping right back down to its previous level, while COVID cases experiences a continued drop. Given how gradual the over spikes in COVID deaths were, and this spike accounting for the highest number of new COVID deaths, I suspect it may be an error. However, more information and statistical testing would need to be done to verify. 
