@@ -33,10 +33,10 @@ us_counties_2022 <-
     "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties-2022.csv")
 
 # Import Population Estimates from US Census Bureau 
-us_population_estimates <- read_csv("/Users/hannahbdr/Desktop/DataAnalysis/R /COVID19 Project/Datasets/fips_population_estimates.csv") # Only includes 2020 and 2021
+us_population_estimates <- read_csv("https://raw.githubusercontent.com/HannahBravo/COVID-19_US_National_Averages/main/fips_population_estimates.csv") # Only includes 2020 and 2021
 
 # Importing a more current population estimate from US Census to include 2022
-us_population_estimates_20_22 <- read_csv("/Users/hannahbdr/Desktop/DataAnalysis/R /COVID19 Project/Datasets/US Census state population estimates 2020 - 2022.csv", col_names = TRUE)
+us_population_estimates_20_22 <- read_csv("https://raw.githubusercontent.com/HannahBravo/COVID-19_US_National_Averages/main/US%20Census%20state%20population%20estimates%202020%20-%202022.csv", col_names = TRUE)
 ```
 I imported data for COVID-19 cases and deaths for each state, and their various counties, across the US, for each year of the pandemic: 2020, 2021, and 2022.  Additionally, I imported population estimates from the US census bureau, unfortunately, the first dataset only contained estimates for 2020, and 2021. So, I chose to import a second dataset of US population estimates from 'census.gov' that contained estimates for all three years; 2020, 2021, and 2022.
 
