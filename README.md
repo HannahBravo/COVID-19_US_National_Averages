@@ -1,7 +1,7 @@
 # COVID-19_US_National_Averages
 This is part1 of my Capstone for the University of Colorado Boulder's Data Analysis with Tidyverse Certificate.
 
-In this project, I ustilize the Tidyverse package in R to analyze the COVID-19 dataset imported from the New Your Times. 
+In this project, I ustilize the Tidyverse package in R to analyze the COVID-19 dataset imported from the New York Times. 
 
 I calculate and plot the total numner of COVID-19 cases and deaths in the United States from March 15, 2020 to December 31, 2022. I then calculate the number of new cases and deaths per day as well as a rolling 7-day average. With those calculations, I look at the days during the pandemic with the fewest number new cases & deaths, as well as the days with the largest number of new cases & deaths.  I also look at the difference between the average number of new cases & deaths and the median number of new cases & deaths, which was a difference of 30% - 40%.
 
